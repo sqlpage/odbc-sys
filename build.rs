@@ -132,14 +132,74 @@ fn compile_unixodbc() {
     build.define("HAVE_CONFIG_H", None);
     build.define("UNIXODBC_SOURCE", None); // Required for internal headers
 
-    // Define platform-specific shared library extension
-    // Note: Static compilation is only supported on Linux and macOS
+    // Define standard headers
+    build.define("HAVE_STDLIB_H", "1");
+    build.define("HAVE_STRING_H", "1");
+    build.define("HAVE_UNISTD_H", "1");
+    build.define("HAVE_PWD_H", "1");
+    build.define("HAVE_SYS_TYPES_H", "1");
+    build.define("HAVE_STDARG_H", "1");
+    build.define("HAVE_TIME_H", "1");
+    build.define("HAVE_ERRNO_H", "1");
+    build.define("HAVE_MALLOC_H", "1");
+    build.define("HAVE_DLFCN_H", "1");
+    build.define("HAVE_CTYPE_H", "1");
+    build.define("HAVE_LIMITS_H", "1");
+    build.define("HAVE_PTHREAD_H", "1");
+    build.define("HAVE_SYS_PARAM_H", "1");
+
+    // Define standard functions
+    build.define("HAVE_LONG_LONG", "1");
+    build.define("HAVE_STRTOL", "1");
+    build.define("HAVE_STRTOLL", "1");
+    build.define("HAVE_ATOLL", "1");
+    build.define("HAVE_STRNCASECMP", "1");
+    build.define("HAVE_VSNPRINTF", "1");
+    build.define("HAVE_SNPRINTF", "1");
+    build.define("HAVE_STRCASECMP", "1");
+    build.define("HAVE_STRDUP", "1");
+    build.define("HAVE_SETLOCALE", "1");
+    build.define("HAVE_MEMSET", "1");
+    build.define("HAVE_MEMCPY", "1");
+    build.define("HAVE_PUTENV", "1");
+    build.define("HAVE_STRERROR", "1");
+    build.define("HAVE_LOCALTIME_R", "1");
+
+    // Threading and dynamic loading
+    build.define("HAVE_LIBPTHREAD", "1");
+    build.define("HAVE_LIBDL", "1");
+
+    // Package info
+    build.define("PACKAGE", "\"unixODBC\"");
+    build.define("VERSION", "\"2.3.12\"");
+
+    // ODBC settings
+    build.define("ENABLE_UNICODE_SUPPORT", "1");
+    build.define("SQL_WCHART_CONVERT", "1");
+    build.define("DISABLE_LTDL", "1");
+
+    // INI library return codes
+    build.define("INI_SUCCESS", "0");
+    build.define("INI_ERROR", "1");
+
+    // Logging levels
+    build.define("LOG_CRITICAL", "0");
+    build.define("LOG_ERROR", "1");
+    build.define("LOG_WARNING", "2");
+    build.define("LOG_INFO", "3");
+    build.define("LOG_DEBUG", "4");
+
+    // Platform-specific defines
     if cfg!(target_os = "linux") {
-        build.define("SHLIBEXT", "\".so\"");
         build.define("DEFLIB_PATH", "\"/usr/lib:/usr/local/lib\"");
+        build.define("SYSTEM_FILE_PATH", "\"/etc\"");
+        build.define("ODBCINST_SYSTEM_INI", "\"odbcinst.ini\"");
+        build.define("ODBC_SYSTEM_INI", "\"odbc.ini\"");
     } else if cfg!(target_os = "macos") {
-        build.define("SHLIBEXT", "\".dylib\"");
         build.define("DEFLIB_PATH", "\"/usr/lib:/usr/local/lib\"");
+        build.define("SYSTEM_FILE_PATH", "\"/etc\"");
+        build.define("ODBCINST_SYSTEM_INI", "\"odbcinst.ini\"");
+        build.define("ODBC_SYSTEM_INI", "\"odbc.ini\"");
     }
 
     // Collect all source files from DriverManager
@@ -204,6 +264,64 @@ fn compile_iodbc() {
 
     // Define common macros for iODBC
     build.define("HAVE_CONFIG_H", None);
+
+    // Define standard headers
+    build.define("HAVE_STDLIB_H", "1");
+    build.define("HAVE_STRING_H", "1");
+    build.define("HAVE_UNISTD_H", "1");
+    build.define("HAVE_PWD_H", "1");
+    build.define("HAVE_SYS_TYPES_H", "1");
+    build.define("HAVE_STDARG_H", "1");
+    build.define("HAVE_TIME_H", "1");
+    build.define("HAVE_ERRNO_H", "1");
+    build.define("HAVE_MALLOC_H", "1");
+    build.define("HAVE_DLFCN_H", "1");
+    build.define("HAVE_CTYPE_H", "1");
+    build.define("HAVE_LIMITS_H", "1");
+    build.define("HAVE_PTHREAD_H", "1");
+    build.define("HAVE_SYS_PARAM_H", "1");
+
+    // Define standard functions
+    build.define("HAVE_LONG_LONG", "1");
+    build.define("HAVE_STRTOL", "1");
+    build.define("HAVE_STRTOLL", "1");
+    build.define("HAVE_ATOLL", "1");
+    build.define("HAVE_STRNCASECMP", "1");
+    build.define("HAVE_VSNPRINTF", "1");
+    build.define("HAVE_SNPRINTF", "1");
+    build.define("HAVE_STRCASECMP", "1");
+    build.define("HAVE_STRDUP", "1");
+    build.define("HAVE_SETLOCALE", "1");
+    build.define("HAVE_MEMSET", "1");
+    build.define("HAVE_MEMCPY", "1");
+    build.define("HAVE_PUTENV", "1");
+    build.define("HAVE_STRERROR", "1");
+    build.define("HAVE_LOCALTIME_R", "1");
+
+    // Threading and dynamic loading
+    build.define("HAVE_LIBPTHREAD", "1");
+    build.define("HAVE_LIBDL", "1");
+
+    // Package info
+    build.define("PACKAGE", "\"iODBC\"");
+    build.define("VERSION", "\"3.52.16\"");
+
+    // ODBC settings
+    build.define("ENABLE_UNICODE_SUPPORT", "1");
+    build.define("SQL_WCHART_CONVERT", "1");
+
+    // Platform-specific defines
+    if cfg!(target_os = "linux") {
+        build.define("DEFLIB_PATH", "\"/usr/lib:/usr/local/lib\"");
+        build.define("SYSTEM_FILE_PATH", "\"/etc\"");
+        build.define("ODBCINST_SYSTEM_INI", "\"odbcinst.ini\"");
+        build.define("ODBC_SYSTEM_INI", "\"odbc.ini\"");
+    } else if cfg!(target_os = "macos") {
+        build.define("DEFLIB_PATH", "\"/usr/lib:/usr/local/lib\"");
+        build.define("SYSTEM_FILE_PATH", "\"/etc\"");
+        build.define("ODBCINST_SYSTEM_INI", "\"odbcinst.ini\"");
+        build.define("ODBC_SYSTEM_INI", "\"odbc.ini\"");
+    }
 
     // Collect all source files from iodbc
     let iodbc_dir = vendor_dir.join("iodbc");

@@ -84,7 +84,7 @@ fn create_ltdl_stub(vendor_dir: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-#[cfg(feature = "static")]
+#[cfg(all(feature = "static", not(feature = "iodbc")))]
 fn extract_version_from_configure_ac(configure_ac_path: &Path) -> Option<String> {
     let content = fs::read_to_string(configure_ac_path).ok()?;
     
@@ -107,7 +107,7 @@ fn extract_version_from_configure_ac(configure_ac_path: &Path) -> Option<String>
     None
 }
 
-#[cfg(feature = "static")]
+#[cfg(all(feature = "static", feature = "iodbc"))]
 fn extract_iodbc_version(configure_ac_path: &Path) -> Option<String> {
     let content = fs::read_to_string(configure_ac_path).ok()?;
     

@@ -7,31 +7,49 @@ env:
 
 jobs:
   test-unix:
-    name: ${{ matrix.os }} - ${{ matrix.features }}
+    name: ${{ matrix.os }} - ${{ matrix.feature-name }}
     
     runs-on: ${{ matrix.os }}
     
     strategy:
       matrix:
         os: [ubuntu-latest, macos-latest]
-        features:
-          - name: "dynamic"
-            flags: ""
-            install_deps: true
-          - name: "static unixODBC"
-            flags: "--features static"
-            install_deps: false
-          - name: "static iODBC"
-            flags: "--features static,iodbc"
-            install_deps: false
+        include:
+          # Dynamic linking tests
+          - os: ubuntu-latest
+            feature-name: "dynamic"
+            feature-flags: ""
+            install-deps: true
+          - os: macos-latest
+            feature-name: "dynamic"
+            feature-flags: ""
+            install-deps: true
+          # Static unixODBC tests
+          - os: ubuntu-latest
+            feature-name: "static unixODBC"
+            feature-flags: "--features static"
+            install-deps: false
+          - os: macos-latest
+            feature-name: "static unixODBC"
+            feature-flags: "--features static"
+            install-deps: false
+          # Static iODBC tests
+          - os: ubuntu-latest
+            feature-name: "static iODBC"
+            feature-flags: "--features static,iodbc"
+            install-deps: false
+          - os: macos-latest
+            feature-name: "static iODBC"
+            feature-flags: "--features static,iodbc"
+            install-deps: false
     
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # tag=v4.1.1
         with:
           submodules: 'recursive'
       
-      - name: Install system ODBC (if needed)
-        if: matrix.features.install_deps
+      - name: Install system ODBC
+        if: matrix.install-deps
         run: |
           if [ "$RUNNER_OS" == "Linux" ]; then
             sudo apt-get update
@@ -42,23 +60,23 @@ jobs:
         shell: bash
       
       - name: Build
-        run: cargo build --verbose ${{ matrix.features.flags }}
+        run: cargo build --verbose ${{ matrix.feature-flags }}
       
       - name: Run tests
-        run: cargo test --verbose ${{ matrix.features.flags }}
+        run: cargo test --verbose ${{ matrix.feature-flags }}
 
   test-windows:
-    name: Windows - ${{ matrix.arch }}
+    name: Windows - ${{ matrix.arch-name }}
     
     runs-on: windows-latest
     
     strategy:
       matrix:
-        arch:
-          - target: x86_64-pc-windows-msvc
-            name: "64-bit"
-          - target: i686-pc-windows-msvc
-            name: "32-bit"
+        include:
+          - arch-name: "64-bit"
+            target: x86_64-pc-windows-msvc
+          - arch-name: "32-bit"
+            target: i686-pc-windows-msvc
     
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # tag=v4.1.1
@@ -66,10 +84,10 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          target: ${{ matrix.arch.target }}
+          target: ${{ matrix.target }}
       
       - name: Build
-        run: cargo build --verbose --target ${{ matrix.arch.target }}
+        run: cargo build --verbose --target ${{ matrix.target }}
       
       - name: Run tests
-        run: cargo test --verbose --target ${{ matrix.arch.target }}
+        run: cargo test --verbose --target ${{ matrix.target }}

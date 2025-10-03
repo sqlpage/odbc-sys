@@ -52,15 +52,14 @@ fn main() {
     }
 }
 
-#[cfg(feature = "static")]
+#[cfg(all(feature = "static", feature = "iodbc"))]
 fn compile_odbc_from_source() {
-    let use_iodbc = std::env::var("CARGO_FEATURE_IODBC").is_ok();
-    
-    if use_iodbc {
-        compile_iodbc();
-    } else {
-        compile_unixodbc();
-    }
+    compile_iodbc();
+}
+
+#[cfg(all(feature = "static", not(feature = "iodbc")))]
+fn compile_odbc_from_source() {
+    compile_unixodbc();
 }
 
 #[cfg(feature = "static")]
@@ -132,15 +131,13 @@ fn compile_unixodbc() {
     build.define("UNIXODBC_SOURCE", None); // Required for internal headers
     
     // Define platform-specific shared library extension
+    // Note: Static compilation is only supported on Linux and macOS
     if cfg!(target_os = "linux") {
         build.define("SHLIBEXT", "\".so\"");
         build.define("DEFLIB_PATH", "\"/usr/lib:/usr/local/lib\"");
     } else if cfg!(target_os = "macos") {
         build.define("SHLIBEXT", "\".dylib\"");
         build.define("DEFLIB_PATH", "\"/usr/lib:/usr/local/lib\"");
-    } else if cfg!(target_os = "windows") {
-        build.define("SHLIBEXT", "\".dll\"");
-        build.define("DEFLIB_PATH", "\"C:\\\\Windows\\\\System32\"");
     }
     
     // Collect all source files from DriverManager

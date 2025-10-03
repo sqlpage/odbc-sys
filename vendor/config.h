@@ -52,7 +52,7 @@
 #define PACKAGE "unixODBC"
 #define VERSION "2.3.12"
 
-/* Platform detection */
+/* Platform detection - Static compilation only supported on Linux and macOS */
 #ifdef __linux__
 #define PLATFORM_LINUX 1
 #define SHLIBEXT ".so"
@@ -61,10 +61,6 @@
 #ifdef __APPLE__
 #define PLATFORM_MACOS 1
 #define SHLIBEXT ".dylib"
-#endif
-
-#ifdef _WIN32
-#define SHLIBEXT ".dll"
 #endif
 
 /* ODBC settings */

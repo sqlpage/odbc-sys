@@ -1,3 +1,4 @@
+use std::fs;
 use std::path::Path;
 use std::process::Command;
 
@@ -58,6 +59,54 @@ fn compile_odbc_from_source() {
 #[cfg(all(feature = "static", not(feature = "iodbc")))]
 fn compile_odbc_from_source() {
     compile_unixodbc();
+}
+
+#[cfg(feature = "static")]
+fn extract_version_from_configure_ac(configure_ac_path: &Path) -> Option<String> {
+    let content = fs::read_to_string(configure_ac_path).ok()?;
+    
+    // Look for AC_INIT line with version
+    // Format: AC_INIT([name], [version], ...)
+    for line in content.lines() {
+        if line.trim_start().starts_with("AC_INIT") {
+            // Extract version from AC_INIT([name], [version], ...)
+            if let Some(version_part) = line.split('[').nth(2) {
+                if let Some(version) = version_part.split(']').next() {
+                    let version = version.trim();
+                    // Skip if it contains macro substitutions
+                    if !version.contains("V_") && !version.is_empty() {
+                        return Some(version.to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+#[cfg(feature = "static")]
+fn extract_iodbc_version(configure_ac_path: &Path) -> Option<String> {
+    let content = fs::read_to_string(configure_ac_path).ok()?;
+    
+    let mut major = None;
+    let mut minor = None;
+    let mut patch = None;
+    
+    for line in content.lines() {
+        if line.contains("m4_define(V_iodbc_major") {
+            major = line.split('[').nth(1)?.split(']').next().map(|s| s.trim().to_string());
+        } else if line.contains("m4_define(V_iodbc_minor") {
+            minor = line.split('[').nth(1)?.split(']').next().map(|s| s.trim().to_string());
+        } else if line.contains("m4_define(V_iodbc_patch") {
+            patch = line.split('[').nth(1)?.split(']').next().map(|s| s.trim().to_string());
+        }
+    }
+    
+    if let (Some(maj), Some(min), Some(pat)) = (major, minor, patch) {
+        Some(format!("{}.{}.{}", maj, min, pat))
+    } else {
+        None
+    }
 }
 
 #[cfg(feature = "static")]
@@ -178,8 +227,14 @@ fn compile_unixodbc() {
     build.define("HAVE_LIBPTHREAD", "1");
     build.define("HAVE_LIBDL", "1");
 
-    // Package info (not strictly necessary for compilation)
+    // Package info - extract version from configure.ac
     build.define("PACKAGE", "\"unixODBC\"");
+    
+    let configure_ac = vendor_dir.join("configure.ac");
+    let version = extract_version_from_configure_ac(&configure_ac)
+        .unwrap_or_else(|| "unknown".to_string());
+    let version_str = format!("\"{}\"", version);
+    build.define("VERSION", version_str.as_str());
 
     // ODBC settings
     build.define("ENABLE_UNICODE_SUPPORT", "1");
@@ -319,8 +374,14 @@ fn compile_iodbc() {
     build.define("HAVE_LIBPTHREAD", "1");
     build.define("HAVE_LIBDL", "1");
 
-    // Package info (not strictly necessary for compilation)
+    // Package info - extract version from configure.ac
     build.define("PACKAGE", "\"iODBC\"");
+    
+    let configure_ac = vendor_dir.join("configure.ac");
+    let version = extract_iodbc_version(&configure_ac)
+        .unwrap_or_else(|| "unknown".to_string());
+    let version_str = format!("\"{}\"", version);
+    build.define("VERSION", version_str.as_str());
 
     // ODBC settings
     build.define("ENABLE_UNICODE_SUPPORT", "1");

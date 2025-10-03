@@ -6,114 +6,70 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build-linux:
-    name: Build & Test on Ubuntu Latest
-
-    runs-on: ubuntu-latest
-
+  test-unix:
+    name: ${{ matrix.os }} - ${{ matrix.features }}
+    
+    runs-on: ${{ matrix.os }}
+    
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        features:
+          - name: "dynamic"
+            flags: ""
+            install_deps: true
+          - name: "static unixODBC"
+            flags: "--features static"
+            install_deps: false
+          - name: "static iODBC"
+            flags: "--features static,iodbc"
+            install_deps: false
+    
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # tag=v4.1.1
         with:
           submodules: 'recursive'
-      - name: Install unixODBC
+      
+      - name: Install system ODBC (if needed)
+        if: matrix.features.install_deps
         run: |
-          sudo apt-get update
-          sudo apt-get install -y unixodbc-dev
-        shell: sudo bash {0}
-      - name: Run tests
-        run: cargo test
-  
-  build-linux-static-unixodbc:
-    name: Build & Test static unixODBC on Ubuntu Latest
-
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # tag=v4.1.1
-        with:
-          submodules: 'recursive'
-      - name: Run tests with static feature
-        run: cargo test --features static
-  
-  build-linux-static-iodbc:
-    name: Build & Test static iODBC on Ubuntu Latest
-
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # tag=v4.1.1
-        with:
-          submodules: 'recursive'
-      - name: Run tests with static iodbc feature
-        run: cargo test --features "static,iodbc"
-
-  build-win64:
-    name: Build & Test on Windows 64Bit
-
-    runs-on: windows-latest
-
-    steps:
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # tag=v4.1.1
+          if [ "$RUNNER_OS" == "Linux" ]; then
+            sudo apt-get update
+            sudo apt-get install -y unixodbc-dev
+          elif [ "$RUNNER_OS" == "macOS" ]; then
+            brew install unixodbc
+          fi
+        shell: bash
+      
       - name: Build
-        run: cargo build --verbose
+        run: cargo build --verbose ${{ matrix.features.flags }}
+      
       - name: Run tests
-        run: cargo test --verbose
+        run: cargo test --verbose ${{ matrix.features.flags }}
 
-  build-win32:
-    name: Build & Test on Windows 32Bit
-
+  test-windows:
+    name: Windows - ${{ matrix.arch }}
+    
     runs-on: windows-latest
-
+    
+    strategy:
+      matrix:
+        arch:
+          - target: x86_64-pc-windows-msvc
+            name: "64-bit"
+          - target: i686-pc-windows-msvc
+            name: "32-bit"
+    
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # tag=v4.1.1
-
-      - name: Install 32Bit toolchain
+      
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          target: i686-pc-windows-msvc
-
+          target: ${{ matrix.arch.target }}
+      
       - name: Build
-        run: cargo build --verbose
-
+        run: cargo build --verbose --target ${{ matrix.arch.target }}
+      
       - name: Run tests
-        run: cargo test --verbose
-
-  build-osx:
-    name: Build & Test on OS-X
-
-    runs-on: macos-latest
-
-    steps:
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # tag=v4.1.1
-        with:
-          submodules: 'recursive'
-      - name: Build
-        run: |
-          brew install unixodbc
-          cargo build --verbose
-      - name: Run tests
-        run: cargo test --verbose
-
-  build-osx-static-unixodbc:
-    name: Build & Test static unixODBC on OS-X
-
-    runs-on: macos-latest
-
-    steps:
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # tag=v4.1.1
-        with:
-          submodules: 'recursive'
-      - name: Run tests with static feature
-        run: cargo test --features static
-  
-  build-osx-static-iodbc:
-    name: Build & Test static iODBC on OS-X
-
-    runs-on: macos-latest
-
-    steps:
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # tag=v4.1.1
-        with:
-          submodules: 'recursive'
-      - name: Run tests with static iodbc feature
-        run: cargo test --features "static,iodbc"
+        run: cargo test --verbose --target ${{ matrix.arch.target }}

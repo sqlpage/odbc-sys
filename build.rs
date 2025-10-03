@@ -165,13 +165,21 @@ fn compile_unixodbc() {
     build.define("HAVE_STRERROR", "1");
     build.define("HAVE_LOCALTIME_R", "1");
 
+    // Wide character functions (C99 standard, in wchar.h)
+    build.define("HAVE_WCSLEN", "1");
+    build.define("HAVE_WCSCPY", "1");
+    build.define("HAVE_WCSCHR", "1");
+    build.define("HAVE_WCSCAT", "1");
+    build.define("HAVE_WCSCMP", "1");
+    build.define("HAVE_TOWLOWER", "1");
+    build.define("HAVE_WCSNCASECMP", "1");
+
     // Threading and dynamic loading
     build.define("HAVE_LIBPTHREAD", "1");
     build.define("HAVE_LIBDL", "1");
 
-    // Package info
+    // Package info (not strictly necessary for compilation)
     build.define("PACKAGE", "\"unixODBC\"");
-    build.define("VERSION", "\"2.3.12\"");
 
     // ODBC settings
     build.define("ENABLE_UNICODE_SUPPORT", "1");
@@ -298,13 +306,21 @@ fn compile_iodbc() {
     build.define("HAVE_STRERROR", "1");
     build.define("HAVE_LOCALTIME_R", "1");
 
+    // Wide character functions (C99 standard, in wchar.h)
+    build.define("HAVE_WCSLEN", "1");
+    build.define("HAVE_WCSCPY", "1");
+    build.define("HAVE_WCSCHR", "1");
+    build.define("HAVE_WCSCAT", "1");
+    build.define("HAVE_WCSCMP", "1");
+    build.define("HAVE_TOWLOWER", "1");
+    build.define("HAVE_WCSNCASECMP", "1");
+
     // Threading and dynamic loading
     build.define("HAVE_LIBPTHREAD", "1");
     build.define("HAVE_LIBDL", "1");
 
-    // Package info
+    // Package info (not strictly necessary for compilation)
     build.define("PACKAGE", "\"iODBC\"");
-    build.define("VERSION", "\"3.52.16\"");
 
     // ODBC settings
     build.define("ENABLE_UNICODE_SUPPORT", "1");

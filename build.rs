@@ -1,37 +1,9 @@
-use std::fs;
+#[allow(unused_imports)]
 use std::path::Path;
 use std::process::Command;
 
 fn main() {
-    if std::env::var("CARGO_FEATURE_STATIC").is_ok() {
-        assert!(
-            !cfg!(target_os = "windows"),
-            "odbc-sys does not currently support static linking on windows"
-        );
-
-        // Check if user wants to provide their own static library path
-        if let Ok(static_path) = std::env::var("ODBC_SYS_STATIC_PATH") {
-            // User-provided static library path (original behavior)
-            println!("cargo:rerun-if-env-changed=ODBC_SYS_STATIC_PATH");
-            println!("cargo:rustc-link-search=native={static_path}");
-            println!("cargo:rustc-link-lib=static=odbc");
-            println!("cargo:rustc-link-lib=static=ltdl");
-            if cfg!(target_os = "macos") {
-                // Homebrew's unixodbc uses the system iconv, so we can't do a fully static linking
-                // but this way we at least have only dependencies on built-in libraries
-                // See also https://github.com/Homebrew/homebrew-core/pull/46145
-                println!("cargo:rustc-link-lib=dylib=iconv");
-            }
-        } else {
-            // When the static feature is enabled without ODBC_SYS_STATIC_PATH,
-            // compile the ODBC driver manager from source
-            #[cfg(feature = "static")]
-            compile_odbc_from_source();
-
-            #[cfg(not(feature = "static"))]
-            panic!("When using the 'static' feature without ODBC_SYS_STATIC_PATH, the 'cc' crate must be enabled as a build dependency");
-        }
-    }
+    link_odbc();
 
     if cfg!(target_os = "macos") {
         if let Some(homebrew_lib_path) = homebrew_library_path() {
@@ -51,43 +23,47 @@ fn main() {
     }
 }
 
-#[cfg(all(feature = "static", feature = "iodbc"))]
-fn compile_odbc_from_source() {
-    compile_iodbc();
-}
-
-#[cfg(all(feature = "static", not(feature = "iodbc")))]
-fn compile_odbc_from_source() {
-    compile_unixodbc();
-}
-
 #[cfg(feature = "static")]
-fn ensure_configured(vendor_dir: &Path) -> std::io::Result<()> {
-    let config_h = vendor_dir.join("config.h");
+fn link_odbc() {
+    assert!(
+        !cfg!(target_os = "windows"),
+        "odbc-sys does not currently support static linking on windows"
+    );
 
-    // Check if config.h already exists
-    if config_h.exists() {
-        return Ok(());
+    // Check if user wants to provide their own static library path
+    if let Ok(static_path) = std::env::var("ODBC_SYS_STATIC_PATH") {
+        // User-provided static library path (original behavior)
+        println!("cargo:rerun-if-env-changed=ODBC_SYS_STATIC_PATH");
+        println!("cargo:rustc-link-search=native={static_path}");
+        println!("cargo:rustc-link-lib=static=odbc");
+        println!("cargo:rustc-link-lib=static=ltdl");
+        if cfg!(target_os = "macos") {
+            // Homebrew's unixodbc uses the system iconv, so we can't do a fully static linking
+            // but this way we at least have only dependencies on built-in libraries
+            // See also https://github.com/Homebrew/homebrew-core/pull/46145
+            println!("cargo:rustc-link-lib=dylib=iconv");
+        }
+        return;
     }
-
-    // Create an empty config.h - all configuration is done via build.define()
-    fs::write(&config_h, "/* Empty config.h - all configuration via build.rs */\n")?;
-    Ok(())
+    compile_odbc_from_source();
 }
 
-#[cfg(feature = "static")]
-fn create_ltdl_stub(vendor_dir: &Path) -> std::io::Result<()> {
-    let ltdl_h_src = Path::new("vendor/ltdl_stub.h");
-    let ltdl_h_dest = vendor_dir.join("ltdl.h");
+#[cfg(not(feature = "static"))]
+fn link_odbc() {}
 
-    std::fs::copy(ltdl_h_src, &ltdl_h_dest)?;
-    Ok(())
+#[cfg(feature = "static")]
+fn ensure_configured(vendor_dir: &Path) {
+    assert!(
+        vendor_dir.join("configure.ac").is_file(),
+        "Submodule at {} not initialized. Run: git submodule update --init --recursive",
+        vendor_dir.canonicalize().unwrap().display()
+    );
 }
 
 #[cfg(all(feature = "static", not(feature = "iodbc")))]
 fn extract_version_from_configure_ac(configure_ac_path: &Path) -> Option<String> {
-    let content = fs::read_to_string(configure_ac_path).ok()?;
-    
+    let content = std::fs::read_to_string(configure_ac_path).ok()?;
+
     // Look for AC_INIT line with version
     // Format: AC_INIT([name], [version], ...)
     for line in content.lines() {
@@ -109,22 +85,37 @@ fn extract_version_from_configure_ac(configure_ac_path: &Path) -> Option<String>
 
 #[cfg(all(feature = "static", feature = "iodbc"))]
 fn extract_iodbc_version(configure_ac_path: &Path) -> Option<String> {
-    let content = fs::read_to_string(configure_ac_path).ok()?;
-    
+    let content = std::fs::read_to_string(configure_ac_path).ok()?;
+
     let mut major = None;
     let mut minor = None;
     let mut patch = None;
-    
+
     for line in content.lines() {
         if line.contains("m4_define(V_iodbc_major") {
-            major = line.split('[').nth(1)?.split(']').next().map(|s| s.trim().to_string());
+            major = line
+                .split('[')
+                .nth(1)?
+                .split(']')
+                .next()
+                .map(|s| s.trim().to_string());
         } else if line.contains("m4_define(V_iodbc_minor") {
-            minor = line.split('[').nth(1)?.split(']').next().map(|s| s.trim().to_string());
+            minor = line
+                .split('[')
+                .nth(1)?
+                .split(']')
+                .next()
+                .map(|s| s.trim().to_string());
         } else if line.contains("m4_define(V_iodbc_patch") {
-            patch = line.split('[').nth(1)?.split(']').next().map(|s| s.trim().to_string());
+            patch = line
+                .split('[')
+                .nth(1)?
+                .split(']')
+                .next()
+                .map(|s| s.trim().to_string());
         }
     }
-    
+
     if let (Some(maj), Some(min), Some(pat)) = (major, minor, patch) {
         Some(format!("{}.{}.{}", maj, min, pat))
     } else {
@@ -133,22 +124,23 @@ fn extract_iodbc_version(configure_ac_path: &Path) -> Option<String> {
 }
 
 #[cfg(all(feature = "static", not(feature = "iodbc")))]
-fn compile_unixodbc() {
+fn compile_odbc_from_source() {
     let vendor_dir = Path::new("vendor/unixODBC");
 
-    // Ensure config.h exists
-    if let Err(e) = ensure_configured(vendor_dir) {
-        println!("cargo:warning=Failed to configure unixODBC: {}", e);
-    }
+    ensure_configured(vendor_dir);
 
-    // Create ltdl.h stub
-    if let Err(e) = create_ltdl_stub(vendor_dir) {
-        println!("cargo:warning=Failed to create ltdl.h stub: {}", e);
-    }
+    let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
+    let out_dir_path = Path::new(&out_dir);
+
+    std::fs::copy("vendor/unixodbc_config.h", out_dir_path.join("config.h"))
+        .expect("Failed to copy unixodbc_config.h to OUT_DIR/config.h");
+
+    std::fs::copy("vendor/ltdl.h", out_dir_path.join("ltdl.h"))
+        .expect("Failed to copy ltdl.h to OUT_DIR/ltdl.h");
 
     let mut build = cc::Build::new();
 
-    // Add include paths
+    build.include(out_dir_path);
     build.include(vendor_dir.join("include"));
     build.include(vendor_dir.join("DriverManager"));
     build.include(vendor_dir.join("odbcinst"));
@@ -157,116 +149,18 @@ fn compile_unixodbc() {
     build.include(vendor_dir.join("lst"));
     build.include(vendor_dir);
 
-    // Add common compiler flags
     build.flag_if_supported("-fPIC");
-    build.flag_if_supported("-std=gnu99"); // Use C99 standard for modern C features
-    build.flag_if_supported("-Wno-error"); // Don't treat warnings as errors
-    build.flag_if_supported("-Wno-implicit-function-declaration"); // Allow implicit function declarations
+    build.flag_if_supported("-std=gnu99");
+    build.flag_if_supported("-Wno-error");
+    build.flag_if_supported("-Wno-implicit-function-declaration");
     build.flag_if_supported("-Wno-int-conversion");
-    build.flag_if_supported("-w"); // Suppress warnings from vendor code
+    build.flag_if_supported("-w");
 
-    // Define common macros
-    build.define("HAVE_CONFIG_H", None);
-    build.define("UNIXODBC_SOURCE", None); // Required for internal headers
-
-    // Define standard headers
-    build.define("HAVE_STDLIB_H", "1");
-    build.define("HAVE_STRING_H", "1");
-    build.define("HAVE_UNISTD_H", "1");
-    build.define("HAVE_PWD_H", "1");
-    build.define("HAVE_SYS_TYPES_H", "1");
-    build.define("HAVE_STDARG_H", "1");
-    build.define("HAVE_TIME_H", "1");
-    build.define("HAVE_ERRNO_H", "1");
-    build.define("HAVE_MALLOC_H", "1");
-    build.define("HAVE_DLFCN_H", "1");
-    build.define("HAVE_CTYPE_H", "1");
-    build.define("HAVE_LIMITS_H", "1");
-    build.define("HAVE_PTHREAD_H", "1");
-    build.define("HAVE_SYS_PARAM_H", "1");
-
-    // Define standard functions
-    build.define("HAVE_LONG_LONG", "1");
-    build.define("HAVE_STRTOL", "1");
-    build.define("HAVE_STRTOLL", "1");
-    build.define("HAVE_ATOLL", "1");
-    build.define("HAVE_STRNCASECMP", "1");
-    build.define("HAVE_VSNPRINTF", "1");
-    build.define("HAVE_SNPRINTF", "1");
-    build.define("HAVE_STRCASECMP", "1");
-    build.define("HAVE_STRDUP", "1");
-    build.define("HAVE_SETLOCALE", "1");
-    build.define("HAVE_MEMSET", "1");
-    build.define("HAVE_MEMCPY", "1");
-    build.define("HAVE_PUTENV", "1");
-    build.define("HAVE_STRERROR", "1");
-    build.define("HAVE_LOCALTIME_R", "1");
-
-    // Wide character functions (C99 standard, in wchar.h)
-    build.define("HAVE_WCSLEN", "1");
-    build.define("HAVE_WCSCPY", "1");
-    build.define("HAVE_WCSCHR", "1");
-    build.define("HAVE_WCSCAT", "1");
-    build.define("HAVE_WCSCMP", "1");
-    build.define("HAVE_TOWLOWER", "1");
-    build.define("HAVE_WCSNCASECMP", "1");
-
-    // Threading and dynamic loading
-    build.define("HAVE_LIBPTHREAD", "1");
-    build.define("HAVE_LIBDL", "1");
-
-    // Package info - extract version from configure.ac
-    build.define("PACKAGE", "\"unixODBC\"");
-    
     let configure_ac = vendor_dir.join("configure.ac");
-    let version = extract_version_from_configure_ac(&configure_ac)
-        .unwrap_or_else(|| "unknown".to_string());
+    let version =
+        extract_version_from_configure_ac(&configure_ac).unwrap_or_else(|| "unknown".to_string());
     let version_str = format!("\"{}\"", version);
     build.define("VERSION", version_str.as_str());
-
-    // ODBC settings
-    build.define("ENABLE_UNICODE_SUPPORT", "1");
-    build.define("SQL_WCHART_CONVERT", "1");
-    build.define("DISABLE_LTDL", "1");
-
-    // INI library return codes
-    build.define("INI_SUCCESS", "0");
-    build.define("INI_ERROR", "1");
-
-    // Logging levels
-    build.define("LOG_CRITICAL", "0");
-    build.define("LOG_ERROR", "1");
-    build.define("LOG_WARNING", "2");
-    build.define("LOG_INFO", "3");
-    build.define("LOG_DEBUG", "4");
-
-    // Type sizes - detect at build time based on target pointer width
-    if cfg!(target_pointer_width = "64") {
-        build.define("SIZEOF_LONG_INT", "8");
-    } else {
-        build.define("SIZEOF_LONG_INT", "4");
-    }
-
-    // Platform detection and shared library extension
-    if cfg!(target_os = "linux") {
-        build.define("PLATFORM_LINUX", "1");
-        build.define("SHLIBEXT", "\".so\"");
-        build.define("DEFLIB_PATH", "\"/usr/lib:/usr/local/lib\"");
-        build.define("SYSTEM_FILE_PATH", "\"/etc\"");
-        build.define("ODBCINST_SYSTEM_INI", "\"odbcinst.ini\"");
-        build.define("ODBC_SYSTEM_INI", "\"odbc.ini\"");
-    } else if cfg!(target_os = "macos") {
-        build.define("PLATFORM_MACOS", "1");
-        build.define("SHLIBEXT", "\".dylib\"");
-        build.define("DEFLIB_PATH", "\"/usr/lib:/usr/local/lib\"");
-        build.define("SYSTEM_FILE_PATH", "\"/etc\"");
-        build.define("ODBCINST_SYSTEM_INI", "\"odbcinst.ini\"");
-        build.define("ODBC_SYSTEM_INI", "\"odbc.ini\"");
-    }
-
-    // Common boolean values
-    build.define("TRUE", "1");
-    build.define("FALSE", "0");
 
     // Collect all source files from DriverManager
     let driver_manager_dir = vendor_dir.join("DriverManager");
@@ -288,7 +182,6 @@ fn compile_unixodbc() {
     let lst_dir = vendor_dir.join("lst");
     add_c_files(&mut build, &lst_dir);
 
-    // Compile the library
     build.compile("odbc");
 
     // Link additional dependencies
@@ -302,120 +195,39 @@ fn compile_unixodbc() {
 }
 
 #[cfg(all(feature = "static", feature = "iodbc"))]
-fn compile_iodbc() {
+fn compile_odbc_from_source() {
     let vendor_dir = Path::new("vendor/iODBC");
 
-    // Ensure config.h exists
-    if let Err(e) = ensure_configured(vendor_dir) {
-        println!("cargo:warning=Failed to configure iODBC: {}", e);
-    }
+    ensure_configured(vendor_dir);
+
+    let out_dir = std::env::var("OUT_DIR").expect("OUT_DIR not set");
+    let out_dir_path = Path::new(&out_dir);
+
+    std::fs::copy("vendor/iodbc_config.h", out_dir_path.join("config.h"))
+        .expect("Failed to copy iodbc_config.h to OUT_DIR/config.h");
 
     let mut build = cc::Build::new();
 
-    // Add include paths
+    build.include(out_dir_path);
     build.include(vendor_dir.join("include"));
     build.include(vendor_dir.join("iodbc"));
     build.include(vendor_dir.join("iodbcinst"));
     build.include(vendor_dir.join("iodbcadm"));
     build.include(vendor_dir);
 
-    // Add common compiler flags
     build.flag_if_supported("-fPIC");
-    build.flag_if_supported("-std=gnu99"); // Use C99 standard for modern C features
-    build.flag_if_supported("-Wno-error"); // Don't treat warnings as errors
-    build.flag_if_supported("-Wno-implicit-function-declaration"); // Allow implicit function declarations
+    build.flag_if_supported("-std=gnu99");
+    build.flag_if_supported("-Wno-error");
+    build.flag_if_supported("-Wno-implicit-function-declaration");
     build.flag_if_supported("-Wno-int-conversion");
-    build.flag_if_supported("-w"); // Suppress warnings from vendor code
+    build.flag_if_supported("-w");
 
-    // Define common macros for iODBC
     build.define("HAVE_CONFIG_H", None);
 
-    // Define standard headers
-    build.define("HAVE_STDLIB_H", "1");
-    build.define("HAVE_STRING_H", "1");
-    build.define("HAVE_UNISTD_H", "1");
-    build.define("HAVE_PWD_H", "1");
-    build.define("HAVE_SYS_TYPES_H", "1");
-    build.define("HAVE_STDARG_H", "1");
-    build.define("HAVE_TIME_H", "1");
-    build.define("HAVE_ERRNO_H", "1");
-    build.define("HAVE_MALLOC_H", "1");
-    build.define("HAVE_DLFCN_H", "1");
-    build.define("HAVE_CTYPE_H", "1");
-    build.define("HAVE_LIMITS_H", "1");
-    build.define("HAVE_PTHREAD_H", "1");
-    build.define("HAVE_SYS_PARAM_H", "1");
-
-    // Define standard functions
-    build.define("HAVE_LONG_LONG", "1");
-    build.define("HAVE_STRTOL", "1");
-    build.define("HAVE_STRTOLL", "1");
-    build.define("HAVE_ATOLL", "1");
-    build.define("HAVE_STRNCASECMP", "1");
-    build.define("HAVE_VSNPRINTF", "1");
-    build.define("HAVE_SNPRINTF", "1");
-    build.define("HAVE_STRCASECMP", "1");
-    build.define("HAVE_STRDUP", "1");
-    build.define("HAVE_SETLOCALE", "1");
-    build.define("HAVE_MEMSET", "1");
-    build.define("HAVE_MEMCPY", "1");
-    build.define("HAVE_PUTENV", "1");
-    build.define("HAVE_STRERROR", "1");
-    build.define("HAVE_LOCALTIME_R", "1");
-
-    // Wide character functions (C99 standard, in wchar.h)
-    build.define("HAVE_WCSLEN", "1");
-    build.define("HAVE_WCSCPY", "1");
-    build.define("HAVE_WCSCHR", "1");
-    build.define("HAVE_WCSCAT", "1");
-    build.define("HAVE_WCSCMP", "1");
-    build.define("HAVE_TOWLOWER", "1");
-    build.define("HAVE_WCSNCASECMP", "1");
-
-    // Threading and dynamic loading
-    build.define("HAVE_LIBPTHREAD", "1");
-    build.define("HAVE_LIBDL", "1");
-
-    // Package info - extract version from configure.ac
-    build.define("PACKAGE", "\"iODBC\"");
-    
     let configure_ac = vendor_dir.join("configure.ac");
-    let version = extract_iodbc_version(&configure_ac)
-        .unwrap_or_else(|| "unknown".to_string());
+    let version = extract_iodbc_version(&configure_ac).unwrap_or_else(|| "unknown".to_string());
     let version_str = format!("\"{}\"", version);
     build.define("VERSION", version_str.as_str());
-
-    // ODBC settings
-    build.define("ENABLE_UNICODE_SUPPORT", "1");
-    build.define("SQL_WCHART_CONVERT", "1");
-
-    // Type sizes - detect at build time based on target pointer width
-    if cfg!(target_pointer_width = "64") {
-        build.define("SIZEOF_LONG_INT", "8");
-    } else {
-        build.define("SIZEOF_LONG_INT", "4");
-    }
-
-    // Platform detection and shared library extension
-    if cfg!(target_os = "linux") {
-        build.define("PLATFORM_LINUX", "1");
-        build.define("SHLIBEXT", "\".so\"");
-        build.define("DEFLIB_PATH", "\"/usr/lib:/usr/local/lib\"");
-        build.define("SYSTEM_FILE_PATH", "\"/etc\"");
-        build.define("ODBCINST_SYSTEM_INI", "\"odbcinst.ini\"");
-        build.define("ODBC_SYSTEM_INI", "\"odbc.ini\"");
-    } else if cfg!(target_os = "macos") {
-        build.define("PLATFORM_MACOS", "1");
-        build.define("SHLIBEXT", "\".dylib\"");
-        build.define("DEFLIB_PATH", "\"/usr/lib:/usr/local/lib\"");
-        build.define("SYSTEM_FILE_PATH", "\"/etc\"");
-        build.define("ODBCINST_SYSTEM_INI", "\"odbcinst.ini\"");
-        build.define("ODBC_SYSTEM_INI", "\"odbc.ini\"");
-    }
-
-    // Common boolean values
-    build.define("TRUE", "1");
-    build.define("FALSE", "0");
 
     // Collect all source files from iodbc
     let iodbc_dir = vendor_dir.join("iodbc");
@@ -429,7 +241,6 @@ fn compile_iodbc() {
     let iodbcinst_dir = vendor_dir.join("iodbcinst");
     add_c_files(&mut build, &iodbcinst_dir);
 
-    // Compile the library
     build.compile("iodbc");
 
     // Link pthread for iODBC

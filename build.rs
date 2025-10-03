@@ -1,14 +1,12 @@
 use std::path::Path;
 use std::process::Command;
 
-#[cfg(feature = "static")]
-use cc;
-
 fn main() {
     if std::env::var("CARGO_FEATURE_STATIC").is_ok() {
-        if cfg!(target_os = "windows") {
-            panic!("odbc-sys does not currently support static linking on windows");
-        }
+        assert!(
+            !cfg!(target_os = "windows"),
+            "odbc-sys does not currently support static linking on windows"
+        );
 
         // Check if user wants to provide their own static library path
         if let Ok(static_path) = std::env::var("ODBC_SYS_STATIC_PATH") {
@@ -28,7 +26,7 @@ fn main() {
             // compile the ODBC driver manager from source
             #[cfg(feature = "static")]
             compile_odbc_from_source();
-            
+
             #[cfg(not(feature = "static"))]
             panic!("When using the 'static' feature without ODBC_SYS_STATIC_PATH, the 'cc' crate must be enabled as a build dependency");
         }
@@ -65,51 +63,54 @@ fn compile_odbc_from_source() {
 #[cfg(feature = "static")]
 fn ensure_configured(vendor_dir: &Path) -> std::io::Result<()> {
     let config_h = vendor_dir.join("config.h");
-    
+
     // Check if config.h already exists
     if config_h.exists() {
         return Ok(());
     }
-    
+
     // Generate minimal config.h without requiring autoconf/automake/libtool
     // This makes the build self-contained and eliminates external tool dependencies
     create_minimal_config_h(vendor_dir)
 }
 
 #[cfg(feature = "static")]
+#[allow(dead_code)]
 fn create_minimal_config_h(vendor_dir: &Path) -> std::io::Result<()> {
     let config_h_src = Path::new("vendor/config.h");
     let config_h_dest = vendor_dir.join("config.h");
-    
+
     std::fs::copy(config_h_src, &config_h_dest)?;
     Ok(())
 }
 
 #[cfg(feature = "static")]
+#[allow(dead_code)]
 fn create_ltdl_stub(vendor_dir: &Path) -> std::io::Result<()> {
     let ltdl_h_src = Path::new("vendor/ltdl.h");
     let ltdl_h_dest = vendor_dir.join("ltdl.h");
-    
+
     std::fs::copy(ltdl_h_src, &ltdl_h_dest)?;
     Ok(())
 }
 
 #[cfg(feature = "static")]
+#[allow(dead_code)]
 fn compile_unixodbc() {
     let vendor_dir = Path::new("vendor/unixODBC");
-    
+
     // Ensure config.h exists
     if let Err(e) = ensure_configured(vendor_dir) {
         println!("cargo:warning=Failed to configure unixODBC: {}", e);
     }
-    
+
     // Create ltdl.h stub
     if let Err(e) = create_ltdl_stub(vendor_dir) {
         println!("cargo:warning=Failed to create ltdl.h stub: {}", e);
     }
-    
+
     let mut build = cc::Build::new();
-    
+
     // Add include paths
     build.include(vendor_dir.join("include"));
     build.include(vendor_dir.join("DriverManager"));
@@ -118,18 +119,18 @@ fn compile_unixodbc() {
     build.include(vendor_dir.join("log"));
     build.include(vendor_dir.join("lst"));
     build.include(vendor_dir);
-    
+
     // Add common compiler flags
     build.flag_if_supported("-fPIC");
     build.flag_if_supported("-std=gnu89"); // Use older C standard that allows implicit declarations
     build.flag_if_supported("-Wno-error"); // Don't treat warnings as errors
     build.flag_if_supported("-Wno-int-conversion");
     build.flag_if_supported("-w"); // Suppress warnings from vendor code
-    
+
     // Define common macros
     build.define("HAVE_CONFIG_H", None);
     build.define("UNIXODBC_SOURCE", None); // Required for internal headers
-    
+
     // Define platform-specific shared library extension
     // Note: Static compilation is only supported on Linux and macOS
     if cfg!(target_os = "linux") {
@@ -139,105 +140,107 @@ fn compile_unixodbc() {
         build.define("SHLIBEXT", "\".dylib\"");
         build.define("DEFLIB_PATH", "\"/usr/lib:/usr/local/lib\"");
     }
-    
+
     // Collect all source files from DriverManager
     let driver_manager_dir = vendor_dir.join("DriverManager");
     add_c_files(&mut build, &driver_manager_dir);
-    
+
     // Collect all source files from odbcinst
     let odbcinst_dir = vendor_dir.join("odbcinst");
     add_c_files(&mut build, &odbcinst_dir);
-    
+
     // Collect all source files from ini
     let ini_dir = vendor_dir.join("ini");
     add_c_files(&mut build, &ini_dir);
-    
+
     // Collect all source files from log
     let log_dir = vendor_dir.join("log");
     add_c_files(&mut build, &log_dir);
-    
+
     // Collect all source files from lst
     let lst_dir = vendor_dir.join("lst");
     add_c_files(&mut build, &lst_dir);
-    
+
     // Compile the library
     build.compile("odbc");
-    
+
     // Link additional dependencies
     if cfg!(target_os = "macos") {
         println!("cargo:rustc-link-lib=dylib=iconv");
     }
     println!("cargo:rustc-link-lib=pthread");
     println!("cargo:rustc-link-lib=dl");
-    
+
     println!("cargo:rerun-if-changed=vendor/unixODBC");
 }
 
 #[cfg(feature = "static")]
+#[allow(dead_code)]
 fn compile_iodbc() {
     let vendor_dir = Path::new("vendor/iODBC");
-    
+
     // Ensure config.h exists
     if let Err(e) = ensure_configured(vendor_dir) {
         println!("cargo:warning=Failed to configure iODBC: {}", e);
     }
-    
+
     let mut build = cc::Build::new();
-    
+
     // Add include paths
     build.include(vendor_dir.join("include"));
     build.include(vendor_dir.join("iodbc"));
     build.include(vendor_dir.join("iodbcinst"));
     build.include(vendor_dir.join("iodbcadm"));
     build.include(vendor_dir);
-    
+
     // Add common compiler flags
     build.flag_if_supported("-fPIC");
     build.flag_if_supported("-std=gnu89"); // Use older C standard that allows implicit declarations
     build.flag_if_supported("-Wno-error"); // Don't treat warnings as errors
     build.flag_if_supported("-Wno-int-conversion");
     build.flag_if_supported("-w"); // Suppress warnings from vendor code
-    
+
     // Define common macros for iODBC
     build.define("HAVE_CONFIG_H", None);
-    
+
     // Collect all source files from iodbc
     let iodbc_dir = vendor_dir.join("iodbc");
     add_c_files(&mut build, &iodbc_dir);
-    
+
     // Collect trace files from iodbc/trace
     let trace_dir = vendor_dir.join("iodbc/trace");
     add_c_files(&mut build, &trace_dir);
-    
+
     // Collect all source files from iodbcinst
     let iodbcinst_dir = vendor_dir.join("iodbcinst");
     add_c_files(&mut build, &iodbcinst_dir);
-    
+
     // Compile the library
     build.compile("iodbc");
-    
+
     // Link pthread for iODBC
     println!("cargo:rustc-link-lib=pthread");
     println!("cargo:rustc-link-lib=dl");
-    
+
     if cfg!(target_os = "macos") {
         println!("cargo:rustc-link-lib=dylib=iconv");
     }
-    
+
     println!("cargo:rerun-if-changed=vendor/iODBC");
 }
 
 #[cfg(feature = "static")]
+#[allow(dead_code)]
 fn add_c_files(build: &mut cc::Build, dir: &Path) {
     if !dir.exists() {
         return;
     }
-    
+
     let entries = match std::fs::read_dir(dir) {
         Ok(entries) => entries,
         Err(_) => return,
     };
-    
+
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_file() {
@@ -245,18 +248,19 @@ fn add_c_files(build: &mut cc::Build, dir: &Path) {
                 if ext == "c" {
                     // Skip certain files that shouldn't be compiled
                     let filename = path.file_name().unwrap().to_str().unwrap();
-                    
+
                     // Skip test files, utilities, and GUI components
-                    if filename.starts_with("test") || 
-                       filename == "dltest.c" ||
-                       filename == "isql.c" ||
-                       filename == "iusql.c" ||
-                       filename == "odbcinst.c" ||
-                       filename == "odbc-config.c" ||
-                       filename == "slencheck.c" {
+                    if filename.starts_with("test")
+                        || filename == "dltest.c"
+                        || filename == "isql.c"
+                        || filename == "iusql.c"
+                        || filename == "odbcinst.c"
+                        || filename == "odbc-config.c"
+                        || filename == "slencheck.c"
+                    {
                         continue;
                     }
-                    
+
                     build.file(&path);
                 }
             }

@@ -122,8 +122,9 @@ fn compile_unixodbc() {
 
     // Add common compiler flags
     build.flag_if_supported("-fPIC");
-    build.flag_if_supported("-std=gnu89"); // Use older C standard that allows implicit declarations
+    build.flag_if_supported("-std=gnu99"); // Use C99 standard for modern C features
     build.flag_if_supported("-Wno-error"); // Don't treat warnings as errors
+    build.flag_if_supported("-Wno-implicit-function-declaration"); // Allow implicit function declarations
     build.flag_if_supported("-Wno-int-conversion");
     build.flag_if_supported("-w"); // Suppress warnings from vendor code
 
@@ -195,8 +196,9 @@ fn compile_iodbc() {
 
     // Add common compiler flags
     build.flag_if_supported("-fPIC");
-    build.flag_if_supported("-std=gnu89"); // Use older C standard that allows implicit declarations
+    build.flag_if_supported("-std=gnu99"); // Use C99 standard for modern C features
     build.flag_if_supported("-Wno-error"); // Don't treat warnings as errors
+    build.flag_if_supported("-Wno-implicit-function-declaration"); // Allow implicit function declarations
     build.flag_if_supported("-Wno-int-conversion");
     build.flag_if_supported("-w"); // Suppress warnings from vendor code
 

@@ -1,6 +1,9 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+#[cfg(feature = "static")]
+use cc;
+
 fn main() {
     if std::env::var("CARGO_FEATURE_STATIC").is_ok() {
         if cfg!(target_os = "windows") {
@@ -23,7 +26,11 @@ fn main() {
         } else {
             // When the static feature is enabled without ODBC_SYS_STATIC_PATH,
             // compile the ODBC driver manager from source
+            #[cfg(feature = "static")]
             compile_odbc_from_source();
+            
+            #[cfg(not(feature = "static"))]
+            panic!("When using the 'static' feature without ODBC_SYS_STATIC_PATH, the 'cc' crate must be enabled as a build dependency");
         }
     }
 
@@ -45,6 +52,7 @@ fn main() {
     }
 }
 
+#[cfg(feature = "static")]
 fn compile_odbc_from_source() {
     let use_iodbc = std::env::var("CARGO_FEATURE_IODBC").is_ok();
     
@@ -55,6 +63,7 @@ fn compile_odbc_from_source() {
     }
 }
 
+#[cfg(feature = "static")]
 fn ensure_configured(vendor_dir: &Path) -> std::io::Result<()> {
     let config_h = vendor_dir.join("config.h");
     let configure_script = vendor_dir.join("configure");
@@ -117,6 +126,7 @@ fn ensure_configured(vendor_dir: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "static")]
 fn create_minimal_config_h(vendor_dir: &Path) -> std::io::Result<()> {
     let config_h = vendor_dir.join("config.h");
     
@@ -229,6 +239,7 @@ fn create_minimal_config_h(vendor_dir: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+#[cfg(feature = "static")]
 fn create_ltdl_stub(vendor_dir: &Path) -> std::io::Result<()> {
     let ltdl_h = vendor_dir.join("ltdl.h");
     
@@ -260,6 +271,7 @@ typedef void* lt_dlhandle;
     Ok(())
 }
 
+#[cfg(feature = "static")]
 fn compile_unixodbc() {
     let vendor_dir = Path::new("vendor/unixODBC");
     
@@ -340,6 +352,7 @@ fn compile_unixodbc() {
     println!("cargo:rerun-if-changed=vendor/unixODBC");
 }
 
+#[cfg(feature = "static")]
 fn compile_iodbc() {
     let vendor_dir = Path::new("vendor/iODBC");
     
@@ -388,6 +401,7 @@ fn compile_iodbc() {
     println!("cargo:rerun-if-changed=vendor/iODBC");
 }
 
+#[cfg(feature = "static")]
 fn add_c_files(build: &mut cc::Build, dir: &Path) {
     if !dir.exists() {
         return;

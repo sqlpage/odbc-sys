@@ -36,9 +36,7 @@ This will:
 - Eliminate the need to install system ODBC packages during development
 
 **Requirements:**
-- autoconf, automake, and libtool must be installed on your system
-- On Debian/Ubuntu: `sudo apt-get install autoconf automake libtool`
-- On macOS with Homebrew: `brew install autoconf automake libtool`
+- No external build tools required! The build is fully self-contained using only the `cc` crate.
 
 **Note:** You can still use `ODBC_SYS_STATIC_PATH` environment variable to point to a pre-built static library if you prefer:
 

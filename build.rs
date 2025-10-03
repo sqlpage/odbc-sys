@@ -77,7 +77,7 @@ fn ensure_configured(vendor_dir: &Path) -> std::io::Result<()> {
 #[cfg(feature = "static")]
 #[allow(dead_code)]
 fn create_minimal_config_h(vendor_dir: &Path) -> std::io::Result<()> {
-    let config_h_src = Path::new("vendor/config.h");
+    let config_h_src = Path::new("vendor/odbc_build_config.h");
     let config_h_dest = vendor_dir.join("config.h");
 
     std::fs::copy(config_h_src, &config_h_dest)?;
@@ -87,7 +87,7 @@ fn create_minimal_config_h(vendor_dir: &Path) -> std::io::Result<()> {
 #[cfg(feature = "static")]
 #[allow(dead_code)]
 fn create_ltdl_stub(vendor_dir: &Path) -> std::io::Result<()> {
-    let ltdl_h_src = Path::new("vendor/ltdl.h");
+    let ltdl_h_src = Path::new("vendor/ltdl_stub.h");
     let ltdl_h_dest = vendor_dir.join("ltdl.h");
 
     std::fs::copy(ltdl_h_src, &ltdl_h_dest)?;

@@ -62,6 +62,29 @@ fn compile_odbc_from_source() {
 }
 
 #[cfg(feature = "static")]
+fn ensure_configured(vendor_dir: &Path) -> std::io::Result<()> {
+    let config_h = vendor_dir.join("config.h");
+
+    // Check if config.h already exists
+    if config_h.exists() {
+        return Ok(());
+    }
+
+    // Create an empty config.h - all configuration is done via build.define()
+    fs::write(&config_h, "/* Empty config.h - all configuration via build.rs */\n")?;
+    Ok(())
+}
+
+#[cfg(feature = "static")]
+fn create_ltdl_stub(vendor_dir: &Path) -> std::io::Result<()> {
+    let ltdl_h_src = Path::new("vendor/ltdl_stub.h");
+    let ltdl_h_dest = vendor_dir.join("ltdl.h");
+
+    std::fs::copy(ltdl_h_src, &ltdl_h_dest)?;
+    Ok(())
+}
+
+#[cfg(feature = "static")]
 fn extract_version_from_configure_ac(configure_ac_path: &Path) -> Option<String> {
     let content = fs::read_to_string(configure_ac_path).ok()?;
     
@@ -109,42 +132,7 @@ fn extract_iodbc_version(configure_ac_path: &Path) -> Option<String> {
     }
 }
 
-#[cfg(feature = "static")]
-fn ensure_configured(vendor_dir: &Path) -> std::io::Result<()> {
-    let config_h = vendor_dir.join("config.h");
-
-    // Check if config.h already exists
-    if config_h.exists() {
-        return Ok(());
-    }
-
-    // Generate minimal config.h without requiring autoconf/automake/libtool
-    // This makes the build self-contained and eliminates external tool dependencies
-    create_minimal_config_h(vendor_dir)
-}
-
-#[cfg(feature = "static")]
-#[allow(dead_code)]
-fn create_minimal_config_h(vendor_dir: &Path) -> std::io::Result<()> {
-    let config_h_src = Path::new("vendor/odbc_build_config.h");
-    let config_h_dest = vendor_dir.join("config.h");
-
-    std::fs::copy(config_h_src, &config_h_dest)?;
-    Ok(())
-}
-
-#[cfg(feature = "static")]
-#[allow(dead_code)]
-fn create_ltdl_stub(vendor_dir: &Path) -> std::io::Result<()> {
-    let ltdl_h_src = Path::new("vendor/ltdl_stub.h");
-    let ltdl_h_dest = vendor_dir.join("ltdl.h");
-
-    std::fs::copy(ltdl_h_src, &ltdl_h_dest)?;
-    Ok(())
-}
-
-#[cfg(feature = "static")]
-#[allow(dead_code)]
+#[cfg(all(feature = "static", not(feature = "iodbc")))]
 fn compile_unixodbc() {
     let vendor_dir = Path::new("vendor/unixODBC");
 
@@ -252,18 +240,33 @@ fn compile_unixodbc() {
     build.define("LOG_INFO", "3");
     build.define("LOG_DEBUG", "4");
 
-    // Platform-specific defines
+    // Type sizes - detect at build time based on target pointer width
+    if cfg!(target_pointer_width = "64") {
+        build.define("SIZEOF_LONG_INT", "8");
+    } else {
+        build.define("SIZEOF_LONG_INT", "4");
+    }
+
+    // Platform detection and shared library extension
     if cfg!(target_os = "linux") {
+        build.define("PLATFORM_LINUX", "1");
+        build.define("SHLIBEXT", "\".so\"");
         build.define("DEFLIB_PATH", "\"/usr/lib:/usr/local/lib\"");
         build.define("SYSTEM_FILE_PATH", "\"/etc\"");
         build.define("ODBCINST_SYSTEM_INI", "\"odbcinst.ini\"");
         build.define("ODBC_SYSTEM_INI", "\"odbc.ini\"");
     } else if cfg!(target_os = "macos") {
+        build.define("PLATFORM_MACOS", "1");
+        build.define("SHLIBEXT", "\".dylib\"");
         build.define("DEFLIB_PATH", "\"/usr/lib:/usr/local/lib\"");
         build.define("SYSTEM_FILE_PATH", "\"/etc\"");
         build.define("ODBCINST_SYSTEM_INI", "\"odbcinst.ini\"");
         build.define("ODBC_SYSTEM_INI", "\"odbc.ini\"");
     }
+
+    // Common boolean values
+    build.define("TRUE", "1");
+    build.define("FALSE", "0");
 
     // Collect all source files from DriverManager
     let driver_manager_dir = vendor_dir.join("DriverManager");
@@ -298,8 +301,7 @@ fn compile_unixodbc() {
     println!("cargo:rerun-if-changed=vendor/unixODBC");
 }
 
-#[cfg(feature = "static")]
-#[allow(dead_code)]
+#[cfg(all(feature = "static", feature = "iodbc"))]
 fn compile_iodbc() {
     let vendor_dir = Path::new("vendor/iODBC");
 
@@ -387,18 +389,33 @@ fn compile_iodbc() {
     build.define("ENABLE_UNICODE_SUPPORT", "1");
     build.define("SQL_WCHART_CONVERT", "1");
 
-    // Platform-specific defines
+    // Type sizes - detect at build time based on target pointer width
+    if cfg!(target_pointer_width = "64") {
+        build.define("SIZEOF_LONG_INT", "8");
+    } else {
+        build.define("SIZEOF_LONG_INT", "4");
+    }
+
+    // Platform detection and shared library extension
     if cfg!(target_os = "linux") {
+        build.define("PLATFORM_LINUX", "1");
+        build.define("SHLIBEXT", "\".so\"");
         build.define("DEFLIB_PATH", "\"/usr/lib:/usr/local/lib\"");
         build.define("SYSTEM_FILE_PATH", "\"/etc\"");
         build.define("ODBCINST_SYSTEM_INI", "\"odbcinst.ini\"");
         build.define("ODBC_SYSTEM_INI", "\"odbc.ini\"");
     } else if cfg!(target_os = "macos") {
+        build.define("PLATFORM_MACOS", "1");
+        build.define("SHLIBEXT", "\".dylib\"");
         build.define("DEFLIB_PATH", "\"/usr/lib:/usr/local/lib\"");
         build.define("SYSTEM_FILE_PATH", "\"/etc\"");
         build.define("ODBCINST_SYSTEM_INI", "\"odbcinst.ini\"");
         build.define("ODBC_SYSTEM_INI", "\"odbc.ini\"");
     }
+
+    // Common boolean values
+    build.define("TRUE", "1");
+    build.define("FALSE", "0");
 
     // Collect all source files from iodbc
     let iodbc_dir = vendor_dir.join("iodbc");
@@ -427,7 +444,6 @@ fn compile_iodbc() {
 }
 
 #[cfg(feature = "static")]
-#[allow(dead_code)]
 fn add_c_files(build: &mut cc::Build, dir: &Path) {
     if !dir.exists() {
         return;

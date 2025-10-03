@@ -7,8 +7,24 @@ fn main() {
             panic!("odbc-sys does not currently support static linking on windows");
         }
 
-        // When the static feature is enabled, compile the ODBC driver manager from source
-        compile_odbc_from_source();
+        // Check if user wants to provide their own static library path
+        if let Ok(static_path) = std::env::var("ODBC_SYS_STATIC_PATH") {
+            // User-provided static library path (original behavior)
+            println!("cargo:rerun-if-env-changed=ODBC_SYS_STATIC_PATH");
+            println!("cargo:rustc-link-search=native={static_path}");
+            println!("cargo:rustc-link-lib=static=odbc");
+            println!("cargo:rustc-link-lib=static=ltdl");
+            if cfg!(target_os = "macos") {
+                // Homebrew's unixodbc uses the system iconv, so we can't do a fully static linking
+                // but this way we at least have only dependencies on built-in libraries
+                // See also https://github.com/Homebrew/homebrew-core/pull/46145
+                println!("cargo:rustc-link-lib=dylib=iconv");
+            }
+        } else {
+            // When the static feature is enabled without ODBC_SYS_STATIC_PATH,
+            // compile the ODBC driver manager from source
+            compile_odbc_from_source();
+        }
     }
 
     if cfg!(target_os = "macos") {
@@ -45,25 +61,27 @@ fn ensure_configured(vendor_dir: &Path) -> std::io::Result<()> {
     
     // Check if config.h already exists
     if config_h.exists() {
+        println!("cargo:warning=config.h already exists at {:?}", config_h);
         return Ok(());
     }
     
-    // Check if configure script exists
+    // Check if configure script exists, if not run autoreconf
     if !configure_script.exists() {
-        // Try to run autogen.sh if it exists
-        let autogen = vendor_dir.join("autogen.sh");
-        if autogen.exists() {
-            println!("cargo:warning=Running autogen.sh for {:?}", vendor_dir);
-            let status = Command::new("sh")
-                .arg(&autogen)
-                .current_dir(vendor_dir)
-                .status();
-            
-            if let Ok(status) = status {
-                if !status.success() {
-                    println!("cargo:warning=autogen.sh failed, will try to continue");
-                }
+        println!("cargo:warning=Running autoreconf for {:?}", vendor_dir);
+        let status = Command::new("autoreconf")
+            .arg("--install")
+            .arg("--force")
+            .current_dir(vendor_dir)
+            .status();
+        
+        if let Ok(status) = status {
+            if !status.success() {
+                println!("cargo:warning=autoreconf failed, will create minimal config.h");
+                return create_minimal_config_h(vendor_dir);
             }
+        } else {
+            println!("cargo:warning=Failed to execute autoreconf, creating minimal config.h");
+            return create_minimal_config_h(vendor_dir);
         }
     }
     
@@ -92,7 +110,7 @@ fn ensure_configured(vendor_dir: &Path) -> std::io::Result<()> {
             create_minimal_config_h(vendor_dir)?;
         }
     } else {
-        println!("cargo:warning=No configure script found, creating minimal config.h");
+        println!("cargo:warning=No configure script found after autoreconf, creating minimal config.h");
         create_minimal_config_h(vendor_dir)?;
     }
     
@@ -120,6 +138,7 @@ fn create_minimal_config_h(vendor_dir: &Path) -> std::io::Result<()> {
 #define HAVE_CTYPE_H 1
 #define HAVE_LIMITS_H 1
 #define HAVE_PTHREAD_H 1
+#define HAVE_SYS_PARAM_H 1
 
 /* Define standard functions */
 #define HAVE_LONG_LONG 1
@@ -158,15 +177,49 @@ fn create_minimal_config_h(vendor_dir: &Path) -> std::io::Result<()> {
 /* Platform detection */
 #ifdef __linux__
 #define PLATFORM_LINUX 1
+#define SHLIBEXT ".so"
 #endif
 
 #ifdef __APPLE__
 #define PLATFORM_MACOS 1
+#define SHLIBEXT ".dylib"
+#endif
+
+#ifdef _WIN32
+#define SHLIBEXT ".dll"
 #endif
 
 /* ODBC settings */
 #define ENABLE_UNICODE_SUPPORT 1
 #define SQL_WCHART_CONVERT 1
+
+/* Disable ltdl usage - we'll use dlopen directly */
+#define DISABLE_LTDL 1
+
+/* Default system file paths */
+#define SYSTEM_FILE_PATH "/etc"
+#define ODBCINST_SYSTEM_INI "odbcinst.ini"
+#define ODBC_SYSTEM_INI "odbc.ini"
+
+/* Common boolean and status values */
+#ifndef TRUE
+#define TRUE 1
+#endif
+
+#ifndef FALSE
+#define FALSE 0
+#endif
+
+/* INI library return codes */
+#define INI_SUCCESS 0
+#define INI_ERROR 1
+
+/* Logging levels */
+#define LOG_CRITICAL 0
+#define LOG_ERROR 1
+#define LOG_WARNING 2
+#define LOG_INFO 3
+#define LOG_DEBUG 4
 
 #endif /* _CONFIG_H */
 "#;
@@ -176,12 +229,48 @@ fn create_minimal_config_h(vendor_dir: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+fn create_ltdl_stub(vendor_dir: &Path) -> std::io::Result<()> {
+    let ltdl_h = vendor_dir.join("ltdl.h");
+    
+    // Create a stub ltdl.h that maps to standard dlopen
+    let ltdl_content = r#"/* Stub ltdl.h that maps to standard dlopen/dlsym */
+#ifndef _LTDL_H
+#define _LTDL_H
+
+#include <dlfcn.h>
+
+/* Map ltdl types and functions to standard dlopen equivalents */
+typedef void* lt_dlhandle;
+
+#define lt_dlopen(filename) dlopen(filename, RTLD_LAZY | RTLD_GLOBAL)
+#define lt_dlsym(handle, symbol) dlsym(handle, symbol)
+#define lt_dlclose(handle) dlclose(handle)
+#define lt_dlerror() dlerror()
+#define lt_dlinit() 0
+#define lt_dlexit() 0
+#define lt_dlsetsearchpath(path) 0
+
+#define LTDL_SET_PRELOADED_SYMBOLS()
+
+#endif /* _LTDL_H */
+"#;
+    
+    std::fs::write(&ltdl_h, ltdl_content)?;
+    println!("cargo:warning=Created ltdl.h stub at {:?}", ltdl_h);
+    Ok(())
+}
+
 fn compile_unixodbc() {
     let vendor_dir = Path::new("vendor/unixODBC");
     
     // Ensure config.h exists
     if let Err(e) = ensure_configured(vendor_dir) {
         println!("cargo:warning=Failed to configure unixODBC: {}", e);
+    }
+    
+    // Create ltdl.h stub
+    if let Err(e) = create_ltdl_stub(vendor_dir) {
+        println!("cargo:warning=Failed to create ltdl.h stub: {}", e);
     }
     
     let mut build = cc::Build::new();
@@ -197,10 +286,26 @@ fn compile_unixodbc() {
     
     // Add common compiler flags
     build.flag_if_supported("-fPIC");
+    build.flag_if_supported("-std=gnu89"); // Use older C standard that allows implicit declarations
+    build.flag_if_supported("-Wno-error"); // Don't treat warnings as errors
+    build.flag_if_supported("-Wno-int-conversion");
     build.flag_if_supported("-w"); // Suppress warnings from vendor code
     
     // Define common macros
     build.define("HAVE_CONFIG_H", None);
+    build.define("UNIXODBC_SOURCE", None); // Required for internal headers
+    
+    // Define platform-specific shared library extension
+    if cfg!(target_os = "linux") {
+        build.define("SHLIBEXT", "\".so\"");
+        build.define("DEFLIB_PATH", "\"/usr/lib:/usr/local/lib\"");
+    } else if cfg!(target_os = "macos") {
+        build.define("SHLIBEXT", "\".dylib\"");
+        build.define("DEFLIB_PATH", "\"/usr/lib:/usr/local/lib\"");
+    } else if cfg!(target_os = "windows") {
+        build.define("SHLIBEXT", "\".dll\"");
+        build.define("DEFLIB_PATH", "\"C:\\\\Windows\\\\System32\"");
+    }
     
     // Collect all source files from DriverManager
     let driver_manager_dir = vendor_dir.join("DriverManager");
@@ -253,6 +358,9 @@ fn compile_iodbc() {
     
     // Add common compiler flags
     build.flag_if_supported("-fPIC");
+    build.flag_if_supported("-std=gnu89"); // Use older C standard that allows implicit declarations
+    build.flag_if_supported("-Wno-error"); // Don't treat warnings as errors
+    build.flag_if_supported("-Wno-int-conversion");
     build.flag_if_supported("-w"); // Suppress warnings from vendor code
     
     // Define common macros for iODBC
